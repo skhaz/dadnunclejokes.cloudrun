@@ -1,0 +1,6 @@
+flask==1.1.1
+firebase-admin==3.2.1
+gunicorn==20.0.4
+psaw==0.0.7
+requests==2.22.0
+simplejson==3.17.0
