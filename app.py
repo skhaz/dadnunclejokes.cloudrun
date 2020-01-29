@@ -25,6 +25,7 @@ app = Flask(__name__)
 @app.route('/r/<subreddit>')
 def run(subreddit):
   before = request.args.get('before', type=int)
+
   submissions = reddit.search_submissions(
     before=before,
     subreddit=subreddit,
