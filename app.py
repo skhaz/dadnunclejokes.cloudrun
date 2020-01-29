@@ -57,9 +57,7 @@ def run(subreddit):
     batch.set(db.document(f'{subreddit}/{result["id"]}'), result)
   batch.commit()
 
-  return jsonify(epoch=locals()
-    .get('result', {})
-    .get('created_utc'))
+  return jsonify(next_epoch=locals().get('result', {}).get('created_utc'))
 
 
 @app.route('/', methods=['POST'])
