@@ -14,12 +14,14 @@ from flask import request, jsonify, abort
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
+from google.cloud import pubsub_v1
 
+app = Flask(__name__)
 firebase_admin.initialize_app(credentials.ApplicationDefault())
 reddit = psaw.PushshiftAPI()
 db = firestore.client()
 session = requests.Session()
-app = Flask(__name__)
+publisher = pubsub_v1.PublisherClient()
 
 
 @app.route('/r/<subreddit>')
@@ -39,25 +41,17 @@ def run(subreddit):
     ],
   )
 
-  f1 = lambda p: p.d_
-  f2 = lambda q: {k: v for k, v in q.items() if k != 'created'}
-  fn = lambda r: functools.reduce(lambda v, f: f(v), (f1, f2), r)
-
-  unfiltered = [fn(d) for d in submissions]
-  garbage = ['http', '[removed]', 'www']
-  filters = [
-    lambda d: bool(d.get('selftext')),
-    lambda d: all(r not in d['selftext'] for r in garbage),
-  ]
-
-  results = filter(lambda v: all([f(v) for f in filters]), unfiltered)
+  unfiltered = [p.d_ for p in submissions]
+  garbage = ['', 'http', '[removed]', 'www']
+  results = filter(lambda d: d.get('selftext', '') not in garbage, unfiltered)
 
   batch = db.batch()
   for result in results:
-    batch.set(db.document(f'{subreddit}/{result["id"]}'), result)
+    batch.set(
+      db.document(f'{subreddit}/{result["id"]}'), { **result, "translated", False })
   batch.commit()
 
-  return jsonify(next_epoch=locals().get('result', {}).get('created_utc'))
+  return jsonify(timestamp=locals().get('result', {}).get('created_utc'))
 
 
 @app.route('/', methods=['POST'])
@@ -75,7 +69,22 @@ def pubsub():
     return ('', 400)
 
   data = base64.b64decode(message['data']).decode('utf-8').strip()
-  json.loads(data)
+  payload = json.loads(data)
+
+  timestamp = payload.get('timestamp')
+  if not timestamp:
+    return ('', 204)
+
+  subreddit = payload['subreddit']
+  url = '%s/r/%s' % (os.environ["BASE_URL"], subreddit)
+  response = session.get(url, params={'before': timestamp})
+  if not response.ok:
+    return ('', 503)
+
+  timestamp = response.json()["timestamp"]
+  payload = dict(timestamp=timestamp, subreddit=subreddit)
+  publisher.publish(
+    topic, data=json.dumps(payload).encode('utf-8')).result()
 
   return ('', 204)
 
